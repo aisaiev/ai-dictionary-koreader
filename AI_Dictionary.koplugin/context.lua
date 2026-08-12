@@ -203,6 +203,8 @@ function Context.build_query_context(plugin, reader_highlight_instance, dialog_t
   if dialog_title == "AI Dictionary" then
     safe_highlighted_text = AnswerFormatter.trim_to_dictionary_limit(safe_highlighted_text, 64)
     display_selection = safe_highlighted_text
+  elseif dialog_title == "AI Translate" then
+    display_selection = AnswerFormatter.trim_to_dictionary_limit(safe_highlighted_text, 64)
   end
 
   return {

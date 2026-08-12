@@ -1,8 +1,10 @@
 local Device = require("device")
 local _ = require("gettext")
 
+local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
 local DictionaryPrompt = require("dictionary_prompt")
+local TranslationPrompt = require("translation_prompt")
 
 local Actions = {}
 
@@ -56,6 +58,17 @@ function Actions.register(plugin)
       callback = function()
         plugin:Query(reader_highlight_instance, "AI Dictionary", true,
           DictionaryPrompt.for_book_selection())
+      end,
+    }
+  end))
+
+  plugin.ui.highlight:addToHighlightDialog("aidictionary_4", ErrorBoundary.wrap("build AI Translate action", function(reader_highlight_instance)
+    return {
+      text = _("AI Translate"),
+      enabled = Device:hasClipboard(),
+      callback = function()
+        plugin:Query(reader_highlight_instance, "AI Translate", false,
+          TranslationPrompt.for_book_selection(Config.get_translation_target_language()))
       end,
     }
   end))

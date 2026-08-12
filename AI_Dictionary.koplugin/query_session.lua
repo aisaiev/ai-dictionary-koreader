@@ -63,7 +63,7 @@ local function resolve_query(query, replacements)
   return resolved_query
 end
 
-function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary, display_selection, preface_with_selection, on_success, request_parameters, on_complete, debug_prompt, session)
+function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary, display_selection, preface_with_selection, on_success, request_parameters, on_complete, debug_prompt, session, is_translation)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
   local last_rendered_dictionary_boundary = 0
@@ -256,7 +256,8 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       preface_with_selection,
       answer,
       final_debug_prompt,
-      update_options
+      update_options,
+      is_translation
     )
     current_viewer.stream_cancel = cancel_stream
     if session then
@@ -381,6 +382,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local context = Context.build_query_context(plugin, reader_highlight_instance, dialog_title)
   local is_dictionary_query = dialog_title == "AI Dictionary"
   local is_explain_query = dialog_title == "AI Explain"
+  local is_translation_query = dialog_title == "AI Translate"
   local image_protocol = (is_dictionary_query or is_explain_query) and Config.is_images_enabled()
   local session = {
     cancelled = false,
@@ -396,6 +398,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local initial_header_text = nil
   if is_dictionary_query then
     initial_header_text = select(1, AnswerFormatter.format_dictionary_output(context.display_selection, ""))
+  elseif is_translation_query then
+    initial_header_text = select(1, AnswerFormatter.format_translation_output(context.display_selection, ""))
   end
 
   local chatgpt_viewer = AIViewer:new {
@@ -445,6 +449,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   state.last_request_parameters = request_parameters
   state.last_is_report = false
   state.last_is_dictionary = is_dictionary_query
+  state.last_is_translation = is_translation_query
   state.last_image_protocol = image_protocol
 
   session.message_history = {
@@ -526,6 +531,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       state.last_request_parameters = request_parameters
       state.last_is_report = false
       state.last_is_dictionary = true
+      state.last_is_translation = false
       state.last_image_protocol = image_protocol
 
       QuerySession.stream_answer(
@@ -647,7 +653,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       if tts_request then
         TTS.mark_text_query_finished(tts_request)
       end
-    end, Config.is_debug_mode_enabled() and query_text or nil, session)
+    end, Config.is_debug_mode_enabled() and query_text or nil, session, is_translation_query)
   end)
   UIManager:scheduleIn(0.01, session.query_start_action)
 end
@@ -658,6 +664,7 @@ function QuerySession.start_report(report_viewer, report_prompt)
   state.last_display_selection = ""
   state.last_request_parameters = nil
   state.last_is_dictionary = false
+  state.last_is_translation = false
   state.last_is_report = true
   state.last_image_protocol = false
 
@@ -745,7 +752,8 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
           end
         end,
         Config.is_debug_mode_enabled() and state.last_query or nil,
-        session
+        session,
+        state.last_is_translation
       )
     end
   end)

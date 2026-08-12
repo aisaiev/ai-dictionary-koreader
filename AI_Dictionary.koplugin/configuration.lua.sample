@@ -10,6 +10,8 @@ local CONFIGURATION = {
 
     output_language = "English",
 
+    translation_target_language = "Ukrainian",
+
     images = true,
 
     update_check = true,

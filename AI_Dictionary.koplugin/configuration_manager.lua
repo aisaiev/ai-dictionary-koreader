@@ -8,6 +8,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "voice_model",
   "voice_voice",
   "output_language",
+  "translation_target_language",
   "images",
   "update_check",
   "debug_mode",
@@ -18,6 +19,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   text_endpoint = true,
   text_model = true,
   output_language = true,
+  translation_target_language = true,
   voice_endpoint = true,
   voice_model = true,
   voice_voice = true,
@@ -44,6 +46,7 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   text_endpoint = "Text endpoint URL",
   text_model = "Text model",
   output_language = "Output language",
+  translation_target_language = "Translation target language",
   additional_parameters = "Additional parameters",
   voice_endpoint = "Voice endpoint URL",
   voice_model = "Voice model",
@@ -83,6 +86,14 @@ function ConfigurationManager.normalize(configuration)
   else
     configuration.output_language = configuration.output_language:match("^%s*(.-)%s*$")
   end
+  if type(configuration.translation_target_language) ~= "string"
+      or configuration.translation_target_language:match("^%s*$")
+      or configuration.translation_target_language:find("[%c\r\n]")
+      or #configuration.translation_target_language > 60 then
+    configuration.translation_target_language = "Ukrainian"
+  else
+    configuration.translation_target_language = configuration.translation_target_language:match("^%s*(.-)%s*$")
+  end
   return configuration
 end
 
@@ -97,6 +108,7 @@ function ConfigurationManager.load()
     text_endpoint = "https://api.openai.com/v1/chat/completions",
     text_model = "gpt-5-nano",
     output_language = "English",
+    translation_target_language = "Ukrainian",
     images = true,
     update_check = true,
   })
@@ -119,6 +131,10 @@ end
 
 function ConfigurationManager.get_output_language()
   return ConfigurationManager.load().output_language or "English"
+end
+
+function ConfigurationManager.get_translation_target_language()
+  return ConfigurationManager.load().translation_target_language or "Ukrainian"
 end
 
 function ConfigurationManager.is_english_output()

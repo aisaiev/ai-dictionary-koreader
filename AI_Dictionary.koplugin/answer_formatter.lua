@@ -43,6 +43,15 @@ function AnswerFormatter.format_dictionary_output(selection, answer)
   return header, PTF_HEADER .. output
 end
 
+function AnswerFormatter.format_translation_output(selection, answer)
+  local body = AnswerFormatter.format_inline_markdown_emphasis(answer or "")
+  local header = nil
+  if selection and selection ~= "" then
+    header = PTF_HEADER .. AnswerFormatter.ptf_bold(selection)
+  end
+  return header, PTF_HEADER .. body
+end
+
 function AnswerFormatter.trim_to_dictionary_limit(text, limit)
   text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
   if #text < limit then
@@ -93,10 +102,15 @@ function AnswerFormatter.append_debug_prompt(answer, prompt)
   return tostring(answer or "") .. "\n\nDebug: prompt sent to AI\n\n" .. prompt
 end
 
-function AnswerFormatter.render_answer(chatgpt_viewer, is_dictionary, display_selection, preface_with_selection, answer, debug_prompt, update_options)
+function AnswerFormatter.render_answer(chatgpt_viewer, is_dictionary, display_selection, preface_with_selection, answer, debug_prompt, update_options, is_translation)
   local display_answer = AnswerFormatter.append_debug_prompt(answer, debug_prompt)
-  if is_dictionary then
-    local header_text, body_text = AnswerFormatter.format_dictionary_output(display_selection, display_answer)
+  if is_dictionary or is_translation then
+    local header_text, body_text
+    if is_translation then
+      header_text, body_text = AnswerFormatter.format_translation_output(display_selection, display_answer)
+    else
+      header_text, body_text = AnswerFormatter.format_dictionary_output(display_selection, display_answer)
+    end
     return chatgpt_viewer:update(body_text, header_text, update_options)
   elseif preface_with_selection then
     display_answer = AnswerFormatter.format_inline_markdown_emphasis(display_answer)
