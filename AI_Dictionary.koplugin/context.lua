@@ -7,6 +7,8 @@ local Screen = Device.screen
 
 local MAX_HL = 2000
 local MAX_TITLE = 100
+local TRANSLATION_CONTEXT_WINDOW = 3
+local DEFAULT_CONTEXT_WINDOW = 15
 
 local function clean_context_part(value)
   if value == nil then
@@ -195,7 +197,10 @@ function Context.build_query_context(plugin, reader_highlight_instance, dialog_t
   end
 
   local safe_highlighted_text = clean_up_string(highlighted_text, MAX_HL)
-  local selection_in_context = Context.get_selection_in_context(reader_highlight_instance, highlighted_text, 15)
+  local context_window = dialog_title == "AI Translate"
+      and TRANSLATION_CONTEXT_WINDOW or DEFAULT_CONTEXT_WINDOW
+  local selection_in_context = Context.get_selection_in_context(
+    reader_highlight_instance, highlighted_text, context_window)
   local safe_selection_in_context = clean_up_string(selection_in_context, MAX_HL)
   local selection_bounds = selected_text_screen_bounds(reader_highlight_instance)
 
