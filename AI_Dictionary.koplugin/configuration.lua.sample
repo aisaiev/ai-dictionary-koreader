@@ -1,6 +1,6 @@
 local CONFIGURATION = {
     api_key = "YOUR API KEY",
-    
+
     text_endpoint = "https://api.openai.com/v1/chat/completions",
     text_model = "gpt-5-nano",
 
@@ -14,9 +14,9 @@ local CONFIGURATION = {
 
     images = true,
 
-    update_check = true,
-    
-    debug_mode = false,  
+    update_check = false,
+
+    debug_mode = false,
 }
 
 return CONFIGURATION
