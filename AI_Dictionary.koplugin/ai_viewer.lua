@@ -10,6 +10,7 @@ Displays some text in a scrollable view.
 ]]
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local Button = require("ui/widget/button")
 local ButtonTable = require("ui/widget/buttontable")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local CheckButton = require("ui/widget/checkbutton")
@@ -20,6 +21,7 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local InputDialog = require("ui/widget/inputdialog")
+local HistoryOverlay = require("history_overlay")
 local LineWidget = require("ui/widget/linewidget")
 local MovableContainer = require("ui/widget/container/movablecontainer")
 local Notification = require("ui/widget/notification")
@@ -87,6 +89,23 @@ local DEFAULT_BOTTOM_SHEET_SELECTION_PADDING = Screen:scaleBySize(5)
 local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(0)
 local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
 local TEXT_LOOKUP_HIGHLIGHT_DELAY_SECONDS = 0.65
+
+-- History navigation appearance. Pixel dimensions scale with the device DPI;
+-- the icon font size is scaled by Font. Diameter includes the circular border.
+local HISTORY_BUTTON_DIAMETER = Screen:scaleBySize(32) -- outer circle size
+local HISTORY_BUTTON_ICON_SIZE = 20 -- arrow font size
+local HISTORY_BUTTON_ICON_OFFSET_Y = -Screen:scaleBySize(2) -- negative moves the glyph up
+local HISTORY_BUTTON_BORDER_WIDTH = math.max(1, Screen:scaleBySize(1))
+local HISTORY_BUTTON_INNER_PADDING = Screen:scaleBySize(2) -- inside the circle
+local HISTORY_BUTTON_EDGE_PADDING = Screen:scaleBySize(6) -- left/right inset
+local HISTORY_BUTTON_BOTTOM_PADDING = Screen:scaleBySize(6) -- below the circles
+
+local function set_history_button_available(button, available)
+  if available then button:enable() else button:disable() end
+  -- HistoryOverlay skips unavailable buttons entirely, revealing the content
+  -- underneath them without reserving any space in the layout.
+  button.hidden = not available
+end
 
 local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
@@ -212,6 +231,8 @@ local AIViewer = InputContainer:extend {
   text_selection_started_callback = nil,
   text_lookup_enabled = false,
   lookup_session = nil,
+  lookup_history = nil,
+  onHistoryNavigate = nil,
   pending_text_lookup = nil,
 
   benedict = nil,
@@ -421,6 +442,37 @@ function AIViewer:init()
   end
   local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
   local inner_height = 1
+  if self.lookup_history and self.onHistoryNavigate then
+    local available_width = self.width - 2 * HISTORY_BUTTON_EDGE_PADDING
+    local button_width = math.min(HISTORY_BUTTON_DIAMETER, math.floor(available_width / 2))
+    local button_content_height = math.max(1,
+      button_width - 2 * (HISTORY_BUTTON_BORDER_WIDTH + HISTORY_BUTTON_INNER_PADDING))
+    local function history_button(text, offset)
+      local button = Button:new {
+        text = text,
+        width = button_width,
+        height = button_content_height,
+        radius = math.floor(button_width / 2),
+        bordersize = HISTORY_BUTTON_BORDER_WIDTH,
+        padding = HISTORY_BUTTON_INNER_PADDING,
+        margin = 0,
+        text_font_size = HISTORY_BUTTON_ICON_SIZE,
+        show_parent = self,
+        callback = function()
+          if not self:isTextLookupPending() then self.onHistoryNavigate(offset) end
+        end,
+      }
+      -- Compensate for the font's low chevron baseline. Redistribute vertical
+      -- padding so the circle and touch target retain their original dimensions.
+      button.frame.padding_top = button.padding_v + HISTORY_BUTTON_ICON_OFFSET_Y
+      button.frame.padding_bottom = button.padding_v - HISTORY_BUTTON_ICON_OFFSET_Y
+      set_history_button_available(button,
+        not self:isTextLookupPending() and self.lookup_history:can_move(offset))
+      return button
+    end
+    self.history_back_button = history_button("\u{2039}", -1)
+    self.history_forward_button = history_button("\u{203A}", 1)
+  end
   local header_widget = nil
   local header_height = 0
   if self.header_text and self.header_text ~= "" then
@@ -522,11 +574,9 @@ function AIViewer:init()
 
   local body_height = inner_height
   if header_widget then
-    body_height = inner_height - header_height - self.header_spacing
-    if body_height < 1 then
-      body_height = 1
-    end
+    body_height = body_height - header_height - self.header_spacing
   end
+  body_height = math.max(1, body_height)
 
   -- TextBoxWidget may shrink an oversized image descriptor without shrinking
   -- its blitbuffer. Reconcile fixed boxes before layout so the bitmap can never
@@ -650,7 +700,6 @@ function AIViewer:init()
   else
     text_group = self.scroll_text_w
   end
-
   self.textw = FrameContainer:new {
     padding_left = text_padding_h,
     padding_right = text_padding_h,
@@ -660,6 +709,16 @@ function AIViewer:init()
     bordersize = 0,
     text_group,
   }
+  local content_widget = self.textw
+  if self.history_back_button then
+    content_widget = HistoryOverlay:new {
+      edge_padding = HISTORY_BUTTON_EDGE_PADDING,
+      bottom_padding = HISTORY_BUTTON_BOTTOM_PADDING,
+      self.textw,
+      self.history_back_button,
+      self.history_forward_button,
+    }
+  end
 
   local frame_widgets = {}
   if self.bottom_sheet then
@@ -676,7 +735,7 @@ function AIViewer:init()
           w = self.width,
           h = textw_height,
         },
-        self.textw,
+        content_widget,
       })
       table.insert(frame_widgets, button_separator)
       table.insert(frame_widgets, button_row)
@@ -691,9 +750,9 @@ function AIViewer:init()
     table.insert(frame_widgets, CenterContainer:new {
       dimen = Geom:new {
         w = self.width,
-        h = self.bottom_sheet and textw_height or self.textw:getSize().h,
+        h = self.bottom_sheet and textw_height or content_widget:getSize().h,
       },
-      self.textw,
+      content_widget,
     })
   end
   if not self.bottom_sheet then
@@ -843,6 +902,17 @@ function AIViewer:Regenerate()
   self.benedict:Regenerate(self)
 end
 
+function AIViewer:refreshHistoryButtons()
+  if not self.lookup_history then return end
+  for offset, button in pairs({ [-1] = self.history_back_button, [1] = self.history_forward_button }) do
+    set_history_button_available(button,
+      not self:isTextLookupPending() and self.lookup_history:can_move(offset))
+  end
+  -- Repaint the underlying text as well when an overlay disappears. A direct
+  -- Button:refresh() would paint an opaque rectangle over that text.
+  UIManager:setDirty(self, "ui")
+end
+
 function AIViewer:isTextLookupPending()
   local pending = self.pending_text_lookup
   return pending ~= nil and not pending.cancelled and not pending.completed
@@ -971,6 +1041,7 @@ function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, t
       callback(cleaned_text, selection_context, hold_duration, start_idx, end_idx, to_source_index_func)
     end)
     self.pending_text_lookup = pending
+    self:refreshHistoryButtons()
     -- Keep TextBoxWidget's marker-style highlight visible long enough for the
     -- selection to be perceived before replacing the popup with a loading state.
     UIManager:scheduleIn(TEXT_LOOKUP_HIGHLIGHT_DELAY_SECONDS, pending.action)
@@ -1071,6 +1142,8 @@ function AIViewer:update(new_text, new_header_text, options)
     text_selection_started_callback = self.text_selection_started_callback,
     text_lookup_enabled = text_lookup_enabled,
     lookup_session = self.lookup_session,
+    lookup_history = self.lookup_history,
+    onHistoryNavigate = self.onHistoryNavigate,
     pending_text_lookup = self:isTextLookupPending() and self.pending_text_lookup or nil,
     benedict = self.benedict,
     tts_request = self.tts_request,
